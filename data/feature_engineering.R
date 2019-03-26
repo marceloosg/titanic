@@ -4,13 +4,13 @@ library(ggplot2)
 library(data.table)
 library(randomForest)
 library(doMC)
-plot_grid_search=function(mtry_grid=seq(70,110,2)/10,ntree_grid=seq(150,300,10),results ){
-  m = loess(Accuracy ~ mtry*ntree, span=0.5,degree=1,data=results)
+plot_grid_search=function(mtry_grid=seq(70,110,2)/10,ntree_grid=seq(150,300,10),results,corte=15 ,degree=1){
+  m = loess(Accuracy ~ mtry*ntree, span=0.5,degree=degree,data=results)
   ndata=expand.grid(mtry = mtry_grid , ntree = ntree_grid)
   y=predict(m, newdata = ndata)
   contourplot(y ~ ndata$mtry*ndata$ntree)
   cm.rev <- function(...) rev(cm.colors(...))
-  levelplot(y ~ ndata$mtry * ndata$ntree, asp = 1,contour=TRUE)
+  levelplot(y ~ ndata$mtry * ndata$ntree, asp = 1,contour=TRUE,cuts=corte)
 }
 
 load_custom_RF = function(){
@@ -73,7 +73,9 @@ addfeatures=function(data,train_data){
   dummy_pclass=dummyfy('pclass',data,pclass_categories)
   embarked_categories=getCategories('embarked',train_data,3)$category
   dummy_embarked=dummyfy('embarked',data,embarked_categories)
-  data=cbind(data,dummy_title,dummy_pclass,dummy_embarked)
+  parch_categories=getCategories('parch',train_data,3)$category
+  dummy_parch=dummyfy('parch',data,parch_categories)
+  data=cbind(data,dummy_title,dummy_pclass,dummy_embarked,dummy_parch)
   data[,has_nick:=grepl("(\\(|\\\")",name,fixed=F)]
   data[,is_male:=grepl("^m",sex,ignore.case = T)]
   data[,is_female:=grepl("^(w|f)",sex,ignore.case = T)]
@@ -84,7 +86,7 @@ addfeatures=function(data,train_data){
   data$no_age=FALSE
   data[is.na(age)]$no_age=TRUE
   data[is.na(age)]$age=0
-  data=data[,-c("sex","name","cabin","pclass","embarked","ticket", "passengerid")]
+  data=data[,-c("sex","name","cabin","pclass","embarked","ticket", "passengerid","parch")]
   target=data.table(target=data$survived)
   transformed_data=data[,-"survived"]
   transformed_data=transformed_data[,-c( "pclass_other",   "embarked_other"),with=F]

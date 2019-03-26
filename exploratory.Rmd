@@ -24,7 +24,7 @@ Our baseline for survival rate is 0.38, that is the "no information" chance of s
 Lets take a look at the what seems to be the categorical variables:
 
 ```{r}
-categorical=colnames(train_data)[c(3,4,5,11,12)]
+categorical=colnames(train_data)[c(3,4,5,8,11,12)]
 rbindlist(lapply(categorical,function(s) data.table(category=s,len=dim(train_data[,.N, by=s])[1])))
 ```
 
@@ -83,15 +83,18 @@ train_data[,.(.N,mean(survived)),embarked]
 ```{r}
 train_data[,.(.N,mean(survived)),pclass]
 ```
+## Parch variable
+```{r}
+train_data[,.(.N,mean(survived)),parch]
+```
+
 ## ticket variable
 ```{r}
 train_data[,head(ticket)]
-#train_data[,.(.N,mean(survived)),nchar(ticket)]
 ```
 
 ## ticket prefix
 ```{r}
-#train_data[,head(ticket)]
 extract_category=function(ticket){
   has_category=grepl(" ",ticket)
   if(has_category){
@@ -112,7 +115,6 @@ ticket[,.(.N,rate=mean(survived),mean(as.integer(value))),.(category)][order(-ra
 
 ### survival rate by ticket order number and prefix
 ```{r}
-#tick=train_data[nchar(ticket)==8][order(ticket),.(ticket,survived)]
 ticket=ticket[order(value)]
 ticket$x=1:dim(ticket)[1]
 ggplot(ticket[!is.na(as.integer(value))],aes(x=x,y=survived,color=category=="NA"))+geom_smooth()
@@ -156,7 +158,7 @@ pairs(data.pca$x[,1:8])
 ```
 
 ```{r}
-regressors=data.table(data.pca$x[,1:20])
+regressors=data.table(data.pca$x[,c(1:25)])
 target=transformed$target
 input=cbind(target,regressors)
 data.lda = lda(target ~ ., input)
@@ -166,22 +168,19 @@ plot(data.lda)
 ```{r}
 pred.train=predict(data.lda)
 
-confusionMatrix(pred.train$class,as.factor(target$target))
+confusionMatrix(pred.train$class,as.factor(target$target),positive="1")
 ```
 Let's build a random forest model with cross-validation
 
 ```{r}
 # train model
-control <- trainControl(method="repeatedcv", number=10, repeats=3)
-#tunegrid <- expand.grid(.mtry=c(seq(1,15,3)), .ntree=c(100, 400,900, 1600, 2500))
+control <- trainControl(method="repeatedcv", number=11, repeats=9)
 tunegrid <- expand.grid(.mtry=c(seq(1,10,3)), .ntree=c(100,400,900))
 metric <- "Accuracy"
 seed=814
 set.seed(seed)
-registerDoMC(cores=6)
+registerDoMC(cores=7)
 custom <- train(factor(target) ~., data=input, method=customRF, metric=metric, tuneGrid=tunegrid, trControl=control)
-#summary(custom)
-#custom$results
 ggplot(custom$results,aes(x=mtry,y=ntree,
                           size=-1/log(Accuracy),
                           color=-1/log(Accuracy/max(Accuracy+AccuracySD))))+geom_point()+geom_point(aes(size=-1/log(Accuracy+AccuracySD)),shape=1)
@@ -192,7 +191,7 @@ plot_grid_search(mtry_grid = seq(10,100,1)/10,ntree_grid = seq(100,900,10), resu
 
 ```{r}
 # train model
-control <- trainControl(method="repeatedcv", number=10, repeats=3)
+control <- trainControl(method="repeatedcv", number=11, repeats=9)
 #tunegrid <- expand.grid(.mtry=c(seq(1,15,3)), .ntree=c(100, 400,900, 1600, 2500))
 tunegrid <- expand.grid(.mtry=c(seq(3,8,1)), .ntree=c(seq(100,700,100)))
 metric <- "Accuracy"
@@ -217,7 +216,7 @@ results[mtry == custom.zoom$bestTune$mtry][ntree==custom.zoom$bestTune$ntree]
 
 What about RF without pre-processing?
 ```{r}
-control <- trainControl(method="repeatedcv", number=10, repeats=3)
+control <- trainControl(method="repeatedcv", number=11, repeats=9)
 #tunegrid <- expand.grid(.mtry=c(seq(1,15,3)), .ntree=c(100, 400,900, 1600, 2500))
 tunegrid <- expand.grid(.mtry=c(seq(1,20,3)), .ntree=c(50,100,400,900,1600))
 metric <- "Accuracy"
@@ -242,7 +241,7 @@ results[mtry == custom.no_preprocess$bestTune$mtry][ntree==custom.no_preprocess$
 ```
 
 ```{r}
-control <- trainControl(method="repeatedcv", number=10, repeats=6)
+control <- trainControl(method="repeatedcv", number=11, repeats=9)
 tunegrid <- expand.grid(.mtry=c(seq(4,15,1)), .ntree=c(100,200,250,300,350,400,450,500))
 metric <- "Accuracy"
 seed=814
@@ -266,9 +265,9 @@ results[mtry == custom.no_preprocess_pan_grid$bestTune$mtry][ntree==custom.no_pr
 ```
 
 ```{r}
-control <- trainControl(method="repeatedcv", number=10, repeats=9)
+control <- trainControl(method="repeatedcv", number=11, repeats=9)
 #tunegrid <- expand.grid(.mtry=c(seq(1,15,3)), .ntree=c(100, 400,900, 1600, 2500))
-tunegrid <- expand.grid(.mtry=c(seq(8,10,1)), .ntree=c(300,325,350,375,400,425,450))
+tunegrid <- expand.grid(.mtry=c(seq(7,11,1)), .ntree=c(300,325,350,375,400,425,450))
 metric <- "Accuracy"
 seed=814
 set.seed(seed)
@@ -281,10 +280,50 @@ ggplot(custom.no_preprocess_zoom$results,aes(x=mtry,y=ntree,
                           color=-1/log(Accuracy/max(Accuracy+AccuracySD))))+geom_point()+geom_point(aes(size=-1/log(Accuracy+AccuracySD)),shape=1)
 ```
 ```{r}
-plot_grid_search(mtry_grid = seq(70,110,1)/10,ntree_grid = seq(250,500,10), results=custom.no_preprocess_zoom$results)
+plot_grid_search(mtry_grid = seq(70,120,1)/10,ntree_grid = seq(300,500,10), results=custom.no_preprocess_zoom$results)
 ```
 
 ```{r}
 results=data.table(custom.no_preprocess_zoom$results)
 results[mtry == custom.no_preprocess_zoom$bestTune$mtry][ntree==custom.no_preprocess_zoom$bestTune$ntree]
 ```
+```{r}
+control <- trainControl(method="repeatedcv", number=11, repeats=9)
+#tunegrid <- expand.grid(.mtry=c(seq(1,15,3)), .ntree=c(100, 400,900, 1600, 2500))
+tunegrid <- expand.grid(.mtry=c(seq(9,12,1)), .ntree=c(200,250,275,300,325,350,375,400))
+metric <- "Accuracy"
+seed=814
+set.seed(seed)
+registerDoMC(cores=7)
+input.no_preproces=cbind(target,transformed$data)
+custom.no_preprocess_zoom2 <- train(factor(target) ~., data=input.no_preproces, method=customRF, metric=metric, tuneGrid=tunegrid, trControl=control)
+#summary(custom)
+all=rbind(custom.no_preprocess$results,
+  custom.no_preprocess_pan_grid$results,
+          custom.no_preprocess_zoom$results,
+             custom.no_preprocess_zoom2$results)
+ggplot(all,aes(x=mtry,y=ntree,
+                          size=-1/log(Accuracy),
+                          color=-1/log(Accuracy/max(Accuracy+AccuracySD))))+geom_point()+geom_point(aes(size=-1/log(Accuracy+AccuracySD)),shape=1)
+```
+```{r}
+plot_grid_search(mtry_grid = seq(50,150,1)/10,ntree_grid = seq(100,500,5), results=all,corte=30,degree=1)
+```
+```{r}
+data.table(all)[which.max(Accuracy)]
+```
+
+```{r}
+y=predict(custom.no_preprocess,input.no_preproces,type="prob")[2]
+data$y=y
+data[,sum(survived)]
+data[order(-y)][1:360, mean(survived)]
+```
+```{r}
+po=order(-y)
+z=transformed$data[po][361:dim(transformed$data)[1]][which(transformed$target[361:dim(transformed$data)[1]]=="1")]
+tz=data.table(t(z[,lapply(.SD,mean)]),keep.rownames = T)
+tz=tz[order(-V1),.(rn,as.integer(V1*100)/100)]
+#z[,.(y,age,title,pclass,parch)]
+```
+
