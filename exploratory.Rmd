@@ -360,7 +360,7 @@ ROC=data.table(lda.y$posterior)[,c(2)]
 colnames(ROC)="probability"
 ROC$reference=input.train$target
 ROC_curve=rbindlist(lapply(seq(1,100)/100,function(tr) data.table(tr=tr,ACC=ROC[,mean((probability > tr) == (reference == 1)) ])))
-ggplot(ROC_curve,aes(x=tr,y=ACC))+geom_line()+xlab("threshold")+ylab("Accuracy")
+ggplot(ROC_curve,aes(x=tr,y=ACC))+geom_line()+xlab("threshold")+ylab("Accuracy")+ylim(0,1)
 ```
 
 ```{r}
