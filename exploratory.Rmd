@@ -152,25 +152,40 @@ summary(transformed$data)
 
 ```{r}
 # Remove constant columns then perform PCA to remove collinearity
-data.pca=prcomp(transformed$data)
+set.seed(123)
+input.no_preproces=cbind(transformed$target,transformed$data)
+train_ind <- sample(seq_len(nrow(input.no_preproces)), size = as.integer(0.7*nrow(input.no_preproces)))
+input.train=input.no_preproces[train_ind]
+input.validate=input.no_preproces[-train_ind]
+
+data.pca=prcomp(input.train[,-"target"])
 #dim(data.pca$x)
 pairs(data.pca$x[,1:8])
 ```
 
 ```{r}
 regressors=data.table(data.pca$x[,c(1:25)])
-target=transformed$target
-input=cbind(target,regressors)
-data.lda = lda(target ~ ., input)
+regressors$target=input.train$target
+data.lda = lda(target ~ ., regressors)
 plot(data.lda)
 ```
 
 ```{r}
 pred.train=predict(data.lda)
 
-confusionMatrix(pred.train$class,as.factor(target$target),positive="1")
+confusionMatrix(pred.train$class,as.factor(regressors$target),positive="1")
 ```
-Let's build a random forest model with cross-validation
+```{r}
+input.pca=predict(data.pca,input.train[,-"target"])
+lda.y=predict(data.lda,data.table(input.pca[,c(1:25)]))
+acc_train=mean(input.train$target==lda.y$class)
+input.pca.validate=predict(data.pca,input.validate[,-"target"])
+lda.y.validate=predict(data.lda,data.table(input.pca.validate[,c(1:25)]))
+acc_validate=mean(input.validate$target==lda.y.validate$class)
+c(acc_train,acc_validate)
+```
+
+Let's build a random forest model with cross-validation and perform an extensive gridsearch.
 
 ```{r}
 # train model
@@ -223,7 +238,6 @@ metric <- "Accuracy"
 seed=814
 set.seed(seed)
 registerDoMC(cores=7)
-input.no_preproces=cbind(target,transformed$data)
 custom.no_preprocess <- train(factor(target) ~., data=input.no_preproces, method=customRF, metric=metric, tuneGrid=tunegrid, trControl=control)
 #summary(custom)
 ggplot(custom.no_preprocess$results,aes(x=mtry,y=ntree,
@@ -309,21 +323,92 @@ ggplot(all,aes(x=mtry,y=ntree,
 ```{r}
 plot_grid_search(mtry_grid = seq(50,150,1)/10,ntree_grid = seq(100,500,5), results=all,corte=30,degree=1)
 ```
+
 ```{r}
 data.table(all)[which.max(Accuracy)]
 ```
 
+#Train model at the exact sweet spot
 ```{r}
-y=predict(custom.no_preprocess,input.no_preproces,type="prob")[2]
-data$y=y
-data[,sum(survived)]
-data[order(-y)][1:360, mean(survived)]
-```
-```{r}
-po=order(-y)
-z=transformed$data[po][361:dim(transformed$data)[1]][which(transformed$target[361:dim(transformed$data)[1]]=="1")]
-tz=data.table(t(z[,lapply(.SD,mean)]),keep.rownames = T)
-tz=tz[order(-V1),.(rn,as.integer(V1*100)/100)]
-#z[,.(y,age,title,pclass,parch)]
+tunegrid=data.table(mtry=11,ntree=250)
+#control <- trainControl(method="repeatedcv", number=11, repeats=3)
+
+custom.final <- train(factor(target) ~., data=input.train, method=customRF, metric=metric, tuneGrid=tunegrid)
+
+c(input.train[,mean(target)],
+input.validate[,mean(target)])
 ```
 
+
+```{r}
+ROC=data.table(predict(custom.final,input.train,type="prob"))[,c(2)]
+colnames(ROC)="probability"
+ROC$reference=input.train$target
+ROC_curve=rbindlist(lapply(seq(1,100)/100,function(tr) data.table(tr=tr,ACC=ROC[,mean((probability > tr) == (reference == 1)) ])))
+ggplot(ROC_curve,aes(x=tr,y=ACC))+geom_line()+xlab("threshold")+ylab("Accuracy")
+```
+```{r}
+min_tr=ROC_curve[which.max(ACC),.(tr,ACC)]
+max_tr=ROC_curve[order(-tr)][which.max(ACC),.(tr,ACC)]
+rbind(min_tr,max_tr)
+```
+
+
+Let's compare with the lda ROC
+```{r}
+ROC=data.table(lda.y$posterior)[,c(2)]
+colnames(ROC)="probability"
+ROC$reference=input.train$target
+ROC_curve=rbindlist(lapply(seq(1,100)/100,function(tr) data.table(tr=tr,ACC=ROC[,mean((probability > tr) == (reference == 1)) ])))
+ggplot(ROC_curve,aes(x=tr,y=ACC))+geom_line()+xlab("threshold")+ylab("Accuracy")
+```
+
+
+Since we have a limited seats on the boat we can get the cutoff probability from the number of possible people that can be saved.
+```{r}
+y=predict(custom.final,input.train,type="prob")[2]
+tdata=copy(input.train)
+tdata$y=y
+tdata=tdata[order(-y)]
+tdata$i=1:dim(tdata)[1]
+tdata$survival_rate=cumsum(tdata$target)/tdata$i
+tdata[1:sum(target),.(rate=mean(target),total_survivors=sum(target))]
+```
+
+Graphically 
+```{r}
+ggplot(tdata,aes(x=i,y=survival_rate))+geom_line()+geom_vline(xintercept =sum(tdata$target))
+```
+The vertical line is the x=`{r} sum(tdata$target)` number of possible survivors.
+
+```{r}
+tdata[,table(y>0.5,target)]
+```
+
+```{r}
+y=predict(custom.final,input.validate,type="prob")[2]
+tdata=copy(input.validate)
+tdata$y=y
+tdata=tdata[order(-y)]
+tdata$i=1:dim(tdata)[1]
+tdata$survival_rate=cumsum(tdata$target)/tdata$i
+tdata[1:sum(target),.(rate=mean(target),total_survivors=sum(target))]
+#ggplot(tdata,aes(x=i,y=survival_rate))+geom_line()
+confusionMatrix(table(tdata$y>0.5,tdata$target=="1")
+```
+Even though we have conducted a cross-validation the model seems to be overfitted
+
+For now the lda model seem more reliable than the RF.
+
+```{r}
+y=data.table(lda.y$posterior)[,c(2)]
+tdata=copy(input.train)
+tdata$y=y
+tdata=tdata[order(-y)]
+tdata$i=1:dim(tdata)[1]
+tdata$survival_rate=cumsum(tdata$target)/tdata$i
+tdata[1:sum(target),.(rate=mean(target),total_survivors=sum(target),y=min(y))]
+ggplot(tdata,aes(x=i,y=survival_rate))+geom_line()+geom_vline(xintercept =sum(tdata$target))
+```
+
+Before a recomendation is given adicional investigation must be performed.

@@ -64,7 +64,7 @@ extract_ticket_category=function(ticket){
 }
 
 
-addfeatures=function(data,train_data){
+addfeatures=function(data,train_data,is_train=T){
   title=train_data[,.(title=sub("\\..*","", sub(".*, ","",name)))]
   title_categories=getCategories('title',title,6)$category
   title=data[,.(title=sub("\\..*","", sub(".*, ","",name)))]
@@ -87,11 +87,17 @@ addfeatures=function(data,train_data){
   data[is.na(age)]$no_age=TRUE
   data[is.na(age)]$age=0
   data=data[,-c("sex","name","cabin","pclass","embarked","ticket", "passengerid","parch")]
-  target=data.table(target=data$survived)
-  transformed_data=data[,-"survived"]
-  transformed_data=transformed_data[,-c( "pclass_other",   "embarked_other"),with=F]
-  print(names(transformed_data))
-  list("target"=target,"data"=transformed_data)  
+  if(is_train){
+    target=data.table(target=data$survived)
+    transformed_data=data[,-"survived"]
+    transformed_data=transformed_data[,-c( "pclass_other",   "embarked_other"),with=F]
+    print(names(transformed_data))
+    list("target"=target,"data"=transformed_data)  
+  }else{
+    transformed_data=transformed_data[,-c( "pclass_other",   "embarked_other"),with=F]
+    print(names(transformed_data))
+    list("data"=transformed_data)  
+  }
 }
 
 getCategories=function(column,data,retain){
