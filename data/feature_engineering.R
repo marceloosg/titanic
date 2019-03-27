@@ -94,6 +94,7 @@ addfeatures=function(data,train_data,is_train=T){
     print(names(transformed_data))
     list("target"=target,"data"=transformed_data)  
   }else{
+    transformed_data=data
     transformed_data=transformed_data[,-c( "pclass_other",   "embarked_other"),with=F]
     print(names(transformed_data))
     list("data"=transformed_data)  
